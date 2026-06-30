@@ -1,11 +1,12 @@
 # USD Unreal Pipeline
 
-CLI for discovering and validating USD asset directories.
+CLI for discovering and validating USD asset directories. USD specific rules are WIP, not yet submitted.
 
 ## Prerequisites
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
+- A USD directory to explore — if you do not have one handy, Pixar's [Kitchen Set](https://openusd.org/release/dl_kitchen_set.html) sample scene works well
 
 ## Setup
 
