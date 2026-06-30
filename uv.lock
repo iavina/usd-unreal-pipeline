@@ -47,12 +47,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "python-dotenv" },
+    { name = "rich" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "python-dotenv" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "typer" },
 ]
 

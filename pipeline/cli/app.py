@@ -7,7 +7,8 @@ import typer
 from pipeline.config import load_config, load_local_env
 from pipeline.logging import render_results
 from pipeline.rules import build_rules
-from pipeline.validation import discover_files, resolve_directory, validate_files
+from pipeline.validation.discovery import discover_files, resolve_directory
+from pipeline.validation.runner import validate_files
 
 app = typer.Typer(help="USD Unreal Pipeline project CLI.")
 

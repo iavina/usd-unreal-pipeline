@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from pipeline.logging import LogEntry
+from pipeline.validation.models import RuleResult
 
 
 class ValidationRule(ABC):
@@ -11,5 +11,5 @@ class ValidationRule(ABC):
     enabled: bool
 
     @abstractmethod
-    def validate(self, file: Path) -> list[LogEntry]:
-        """Validate a single file and return rule-level log entries."""
+    def validate(self, file: Path) -> list[RuleResult]:
+        """Validate a single file and return rule-level results."""

@@ -25,4 +25,5 @@
 - Third REASONS Canvas created: `spdd/prompt/GGQPA-XXX-202606301017-[Refactor]-package-organization-comments.md`.
 - Third `/spdd-generate` completed: `pipeline` refactored into domain packages (`cli`, `config`, `logging`, `rules`, `validation`) with Pythonic module names.
 - Local `.env` already contains the user's test directory; prefer it for future smoke tests instead of creating temporary test assets unless needed.
+- Validation result design refined: rules now return validation-owned `RuleResult` objects, files aggregate into `FileValidationResult`, and logging only renders those results plus a run summary.
 

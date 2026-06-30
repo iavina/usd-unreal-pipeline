@@ -2,20 +2,25 @@
 
 import typer
 
-from pipeline.logging.models import FileValidationResult
+from pipeline.logging.terminal_styles import (
+    SUMMARY_LABELS,
+    format_status_tag,
+    format_summary_header,
+    format_summary_rows,
+)
+from pipeline.validation.models import FileValidationResult
 
-STATUS_WIDTH = 6
 GAP = " " * 4
 FAILED_RULE_INDENT = " " * 10
 
 
 def render_file_result(result: FileValidationResult) -> list[str]:
     """Render one file's pass or failed block as terminal lines."""
-    status = "PASS" if result.passed else "FAILED"
-    lines = [f"{status:<{STATUS_WIDTH}}{GAP}{result.file}"]
+    status_tag = format_status_tag(result.passed)
+    lines = [f"{status_tag}{GAP}{result.file}"]
 
     if not result.passed:
-        for failed_rule in result.failed_rules:
+        for failed_rule in result.failed_rule_results:
             lines.append(
                 f"{FAILED_RULE_INDENT}- {failed_rule.rule}: {failed_rule.message}"
             )
@@ -24,23 +29,33 @@ def render_file_result(result: FileValidationResult) -> list[str]:
     return lines
 
 
-def render_summary(
-    file_count: int, passed_count: int, failed_count: int
-) -> tuple[str, str]:
-    """Render opening and closing run summaries."""
-    header = f"Files found: {file_count}"
-    footer = f"Passed: {passed_count}  Failed: {failed_count}"
-    return header, footer
+def render_summary(results: list[FileValidationResult], file_count: int) -> list[str]:
+    """Render a whole-run summary after per-file results."""
+    passed_count = sum(1 for result in results if result.passed)
+    failed_count = len(results) - passed_count
+    failed_rule_checks = sum(
+        len(result.failed_rule_results) for result in results
+    )
+
+    rows = [
+        (SUMMARY_LABELS[0], file_count),
+        (SUMMARY_LABELS[1], passed_count),
+        (SUMMARY_LABELS[2], failed_count),
+        (SUMMARY_LABELS[3], failed_rule_checks),
+    ]
+
+    return [
+        "",
+        format_summary_header(),
+        *format_summary_rows(rows),
+        "",
+    ]
 
 
 def render_results(results: list[FileValidationResult], file_count: int) -> None:
-    """Print structured per-file validation output."""
-    passed_count = sum(1 for result in results if result.passed)
-    failed_count = len(results) - passed_count
-    header, footer = render_summary(file_count, passed_count, failed_count)
-
-    typer.echo(header)
+    """Print structured per-file validation output and a run summary."""
     for result in results:
         for line in render_file_result(result):
             typer.echo(line)
-    typer.echo(footer)
+    for line in render_summary(results, file_count):
+        typer.echo(line)

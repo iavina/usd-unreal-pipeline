@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Extend the `explore` command into a discover-and-validate workflow that recursively collects files under a directory, applies a configurable modular set of rules to every discovered file, emits structured per-file pass or failed results with aligned formatting, and supports default plus JSON-based configuration with a general local `.env` file for development variables.
+Extend the `explore` command into a discover-and-validate workflow that recursively collects files under a directory, applies a configurable modular set of rules to every discovered file, models rule and file validation results in the validation domain, renders structured per-file pass or failed results with an overall run summary, and supports default plus JSON-based configuration with a general local `.env` file for development variables.
 
 ## Entities
 
@@ -23,23 +23,22 @@ class ValidationRule {
     <<abstract>>
     +str name
     +bool enabled
-    +validate(file: Path) List~LogEntry~
+    +validate(file: Path) List~RuleResult~
 }
 
 class FileFormatRule {
     +list allowed_extensions
-    +validate(file: Path) List~LogEntry~
+    +validate(file: Path) List~RuleResult~
 }
 
 class FileSizeRule {
     +int max_bytes
-    +validate(file: Path) List~LogEntry~
+    +validate(file: Path) List~RuleResult~
 }
 
-class LogEntry {
+class RuleResult {
     +Severity severity
     +str rule
-    +Path file
     +str message
 }
 
@@ -53,7 +52,7 @@ class Severity {
 class FileValidationResult {
     +Path file
     +bool passed
-    +list failed_rules
+    +list rule_results
 }
 
 class ValidationRunner {
@@ -64,11 +63,11 @@ PipelineCli --> PipelineConfig : loads
 PipelineCli --> ValidationRunner : invokes
 ValidationRunner --> ValidationRule : applies
 ValidationRunner --> FileValidationResult : produces
-FileValidationResult --> LogEntry : aggregates
+FileValidationResult --> RuleResult : aggregates
 FileFormatRule --|> ValidationRule
 FileSizeRule --|> ValidationRule
-ValidationRule --> LogEntry : produces
-LogEntry --> Severity : uses
+ValidationRule --> RuleResult : produces
+RuleResult --> Severity : uses
 PipelineConfig --> ValidationRule : enables
 ```
 
@@ -80,7 +79,7 @@ PipelineConfig --> ValidationRule : enables
    - Change `explore` from path-only printing into: resolve directory, recursively discover files, run enabled rules, render structured per-file results, set exit code from results.
 
 2. Modular rule model:
-   - Introduce an abstract `ValidationRule` base type with a stable `name` and `validate(file: Path) -> list[LogEntry]` contract.
+   - Introduce an abstract `ValidationRule` base type with a stable `name` and `validate(file: Path) -> list[RuleResult]` contract.
    - Implement two concrete rules for this slice: `file_format` and `file_size`.
    - Build enabled rules from configuration so unused rules are skipped cleanly.
 
@@ -103,9 +102,10 @@ PipelineConfig --> ValidationRule : enables
 
 6. Structured logging:
    - Aggregate rule results per file into a `FileValidationResult`.
+   - Keep `RuleResult`, `FileValidationResult`, and `Severity` in the validation domain; logging consumes these objects but does not own them.
    - Render one summary line per file with a `PASS` or `FAILED` status tag, a fixed gap for alignment, and the file path.
    - For failed files, print each failed rule on indented lines directly below the file summary.
-   - Keep internal `LogEntry` objects with severities `info`, `warning`, and `error` for rule evaluation, but terminal output must be organized by file.
+   - Render an overall run summary that includes files processed, passed count, failed count, and failed rule check count.
 
 7. Execution behavior:
    - Continue discovering and validating all files even when individual files or rules fail.
@@ -125,8 +125,8 @@ PipelineConfig --> ValidationRule : enables
 2. `FileFormatRule` implements `ValidationRule`.
 3. `FileSizeRule` implements `ValidationRule`.
 4. `FileValidationResult` aggregates per-file pass or failed state and failed rule details.
-5. `Severity` is a string enumeration with values `info`, `warning`, and `error`.
-6. `LogEntry` is a simple data object holding one rule-level evaluation event.
+5. `RuleResult` is a simple data object holding one rule-level validation event.
+6. `Severity` is a string enumeration with values `info`, `warning`, and `error`.
 
 ### Dependencies
 
@@ -135,9 +135,9 @@ PipelineConfig --> ValidationRule : enables
 3. `pipeline/env.py` loads the general local `.env` file into process environment.
 4. `pipeline/config.py` owns default configuration and JSON merge loading.
 5. `pipeline/discovery.py` resolves explore directory input and recursively lists files.
-6. `pipeline/log_entry.py` defines `Severity`, `LogEntry`, and `FileValidationResult`.
-7. `pipeline/log_renderer.py` renders per-file pass or failed output blocks.
-8. `pipeline/validation.py` orchestrates rule execution over discovered files.
+6. `pipeline/validation/models.py` defines `Severity`, `RuleResult`, and `FileValidationResult`.
+7. `pipeline/logging/renderer.py` renders per-file pass or failed output blocks and the whole-run summary from validation results.
+8. `pipeline/validation/runner.py` orchestrates rule execution over discovered files.
 9. `pipeline/rules/base.py` defines `ValidationRule`.
 10. `pipeline/rules/file_format.py` and `pipeline/rules/file_size.py` implement concrete rules.
 11. `pipeline/rules/registry.py` maps configuration to enabled rule instances.
@@ -148,8 +148,8 @@ PipelineConfig --> ValidationRule : enables
 2. Environment Layer: general `.env` loading for local development variables.
 3. Configuration Layer: defaults, JSON overrides, rule enablement.
 4. Discovery Layer: directory validation and recursive file listing.
-5. Validation Layer: modular rule execution and per-file result aggregation.
-6. Output Layer: aligned per-file pass or failed rendering.
+5. Validation Layer: rule result modeling, modular rule execution, and per-file result aggregation.
+6. Output Layer: aligned per-file pass or failed rendering plus whole-run summary.
 
 ## Operations
 
@@ -194,15 +194,16 @@ PipelineConfig --> ValidationRule : enables
 5. Constraints:
    - Ignore unknown JSON keys rather than failing, unless JSON parsing itself fails.
 
-### Implement Log Models - `pipeline/log_entry.py`
+### Implement Validation Models - `pipeline/validation/models.py`
 
-1. Responsibility: Define shared log and per-file result data types.
+1. Responsibility: Define rule-level and file-level validation result data types.
 2. Attributes:
    - `Severity`: enumeration or literal union with values `info`, `warning`, and `error`.
-   - `LogEntry`: fields `severity`, `rule`, `file`, `message`.
-   - `FileValidationResult`: fields `file`, `passed`, `failed_rules` where `failed_rules` is an ordered list of failed rule name and message pairs.
+   - `RuleResult`: fields `severity`, `rule`, `message`.
+   - `FileValidationResult`: fields `file`, `rule_results`, and computed or stored pass/fail state derived from whether any `RuleResult` has severity `error`.
 3. Constraints:
    - Keep this module free of Typer or filesystem orchestration logic.
+   - Do not define validation result objects in the logging domain.
 
 ### Implement Log Renderer - `pipeline/log_renderer.py`
 
@@ -213,17 +214,18 @@ PipelineConfig --> ValidationRule : enables
       - If `result.passed` is true, render one line in the format `PASS     {file}`.
       - If `result.passed` is false, render one line in the format `FAILED   {file}`.
       - Use a fixed-width status column of 6 characters, followed by exactly 4 spaces, followed by the file path so all file paths align vertically.
-      - For failed files, render one indented line per failed rule directly below the summary line using the format `          - {rule}: {message}`.
+      - For failed files, render one indented line per failed `RuleResult` directly below the summary line using the format `          - {rule}: {message}`.
       - Leave one blank line after each failed file block to keep output grouped and readable.
-   - `render_summary(file_count: int, passed_count: int, failed_count: int) -> list[str]`
+   - `render_summary(results: list[FileValidationResult], file_count: int) -> list[str]`
     - Logic:
-      - Render a short run summary before file results, for example `Files found: {file_count}`.
-      - Render a closing summary after file results, for example `Passed: {passed_count}  Failed: {failed_count}`.
+      - Render a structured run summary before file results.
+      - Include `Files processed`, `Passed`, `Failed`, and `Failed rule checks`.
    - `render_results(results: list[FileValidationResult], file_count: int) -> None`
     - Logic:
-      - Print summary header, then each file result block in discovery order, then closing summary using `typer.echo`.
+      - Print the run summary, then each file result block in discovery order using `typer.echo`.
 3. Constraints:
    - Terminal output must be structured, grouped by file, and easy to scan.
+   - Logging should consume validation result objects, not own or mutate them.
    - Do not print one flat chronological rule log as the primary user-facing format.
 
 ### Implement Rule Base - `pipeline/rules/base.py`
@@ -233,7 +235,7 @@ PipelineConfig --> ValidationRule : enables
    - `name: str`
    - `enabled: bool`
 3. Methods:
-   - `validate(file: Path) -> list[LogEntry]`
+   - `validate(file: Path) -> list[RuleResult]`
     - Logic:
       - Abstract method implemented by concrete rules.
 4. Constraints:
@@ -245,11 +247,11 @@ PipelineConfig --> ValidationRule : enables
 2. Attributes:
    - `allowed_extensions: list[str]`
 3. Methods:
-   - `validate(file: Path) -> list[LogEntry]`
+   - `validate(file: Path) -> list[RuleResult]`
     - Logic:
       - Compare `file.suffix` case-insensitively against `allowed_extensions`.
-      - If extension is allowed, return one `info` entry with message `Allowed file format`.
-      - If extension is not allowed, return one `error` entry with message `Unsupported file format: {suffix}`.
+      - If extension is allowed, return one `RuleResult` with severity `info` and message `Allowed file format`.
+      - If extension is not allowed, return one `RuleResult` with severity `error` and message `Unsupported file format: {suffix}`.
 4. Constraints:
    - Rule name must be `file_format`.
 
@@ -259,11 +261,11 @@ PipelineConfig --> ValidationRule : enables
 2. Attributes:
    - `max_bytes: int`
 3. Methods:
-   - `validate(file: Path) -> list[LogEntry]`
+   - `validate(file: Path) -> list[RuleResult]`
     - Logic:
       - Read file size from filesystem metadata.
-      - If size is less than or equal to `max_bytes`, return one `info` entry with message `File size within limit`.
-      - If size is greater than `max_bytes`, return one `error` entry with message `File exceeds max size of {max_bytes} bytes`.
+      - If size is less than or equal to `max_bytes`, return one `RuleResult` with severity `info` and message `File size within limit`.
+      - If size is greater than `max_bytes`, return one `RuleResult` with severity `error` and message `File exceeds max size of {max_bytes} bytes`.
 4. Constraints:
    - Rule name must be `file_size`.
 
@@ -322,9 +324,9 @@ PipelineConfig --> ValidationRule : enables
     - Logic:
       - If no rules are enabled, return an empty result list and let the CLI render a `warning` run-level message `No validation rules enabled`.
       - For each file in input order, run every enabled rule in registry order.
-      - Collect rule-level `LogEntry` results internally for each file.
-      - Build one `FileValidationResult` per file where `passed` is true only if no rule produced an `error` entry for that file.
-      - Populate `failed_rules` with the name and message of each failed rule for that file.
+      - Collect `RuleResult` objects for each file.
+      - Build one `FileValidationResult` per file from the full rule result list.
+      - Treat the file as passed only if no rule produced an `error` result.
       - Continue processing all remaining files and all remaining rules even when failures occur.
       - Return the full per-file result list after the complete run finishes.
 3. Constraints:
@@ -342,7 +344,7 @@ PipelineConfig --> ValidationRule : enables
       - Discover files recursively.
       - Build enabled rules from configuration.
       - Run validation and collect `FileValidationResult` objects.
-      - Render run summary and per-file pass or failed output through the log renderer.
+      - Render a whole-run summary and per-file pass or failed output through the log renderer.
       - If no rules are enabled, print one `warning` line and exit `0`.
       - If any file result failed, exit with code `1`; otherwise exit `0`.
 3. CLI options:
@@ -391,7 +393,7 @@ PipelineConfig --> ValidationRule : enables
    - Use type annotations throughout new modules.
    - Use `pathlib.Path` for filesystem paths.
    - Use `abc.ABC` for the rule abstraction.
-   - Use dataclasses or small typed objects for `LogEntry`, `FileValidationResult`, and configuration views.
+   - Use dataclasses or small typed objects for `RuleResult`, `FileValidationResult`, and configuration views.
    - Keep modules focused by responsibility; avoid returning CLI concerns from rule classes.
 
 3. Configuration:
@@ -418,8 +420,11 @@ PipelineConfig --> ValidationRule : enables
    - `explore` must recursively discover all files under the provided directory.
    - `explore` must run only enabled rules from configuration.
    - First concrete rules must be `file_format` and `file_size`.
+   - Rules must return `RuleResult` objects, not logging-owned models.
+   - Validation must own `RuleResult`, `FileValidationResult`, and `Severity`.
    - Each file must render exactly one `PASS` or `FAILED` summary line using a fixed-width status tag, a 4-space gap, and the file path.
    - Failed files must list failed rules on indented lines directly below the summary line.
+   - Output must include a whole-run summary with files processed, passed, failed, and failed rule check count.
    - Severities must be limited to `info`, `warning`, and `error` for internal rule evaluation.
 
 2. Execution constraints:

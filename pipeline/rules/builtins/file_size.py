@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from pipeline.logging import LogEntry, Severity
 from pipeline.rules.validation_rule import ValidationRule
+from pipeline.validation.models import RuleResult, Severity
 
 
 class FileSizeRule(ValidationRule):
@@ -11,23 +11,21 @@ class FileSizeRule(ValidationRule):
         self.enabled = enabled
         self.max_bytes = max_bytes
 
-    def validate(self, file: Path) -> list[LogEntry]:
+    def validate(self, file: Path) -> list[RuleResult]:
         size = file.stat().st_size
         if size <= self.max_bytes:
             return [
-                LogEntry(
+                RuleResult(
                     severity=Severity.INFO,
                     rule=self.name,
-                    file=file,
                     message="File size within limit",
                 )
             ]
 
         return [
-            LogEntry(
+            RuleResult(
                 severity=Severity.ERROR,
                 rule=self.name,
-                file=file,
                 message=f"File exceeds max size of {self.max_bytes} bytes",
             )
         ]

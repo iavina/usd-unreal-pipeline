@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from pipeline.logging import FailedRule, FileValidationResult, Severity
 from pipeline.rules import ValidationRule
+from pipeline.validation.models import FileValidationResult
 
 
 def validate_files(
@@ -13,21 +13,15 @@ def validate_files(
     results: list[FileValidationResult] = []
 
     for file in files:
-        failed_rules: list[FailedRule] = []
+        rule_results = []
 
         for rule in rules:
-            entries = rule.validate(file)
-            for entry in entries:
-                if entry.severity == Severity.ERROR:
-                    failed_rules.append(
-                        FailedRule(rule=entry.rule, message=entry.message)
-                    )
+            rule_results.extend(rule.validate(file))
 
         results.append(
             FileValidationResult(
                 file=file,
-                passed=len(failed_rules) == 0,
-                failed_rules=failed_rules,
+                rule_results=rule_results,
             )
         )
 

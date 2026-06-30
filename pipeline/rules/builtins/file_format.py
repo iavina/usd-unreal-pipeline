@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from pipeline.logging import LogEntry, Severity
 from pipeline.rules.validation_rule import ValidationRule
+from pipeline.validation.models import RuleResult, Severity
 
 
 class FileFormatRule(ValidationRule):
@@ -11,23 +11,21 @@ class FileFormatRule(ValidationRule):
         self.enabled = enabled
         self.allowed_extensions = [ext.lower() for ext in allowed_extensions]
 
-    def validate(self, file: Path) -> list[LogEntry]:
+    def validate(self, file: Path) -> list[RuleResult]:
         suffix = file.suffix.lower()
         if suffix in self.allowed_extensions:
             return [
-                LogEntry(
+                RuleResult(
                     severity=Severity.INFO,
                     rule=self.name,
-                    file=file,
                     message="Allowed file format",
                 )
             ]
 
         return [
-            LogEntry(
+            RuleResult(
                 severity=Severity.ERROR,
                 rule=self.name,
-                file=file,
                 message=f"Unsupported file format: {suffix}",
             )
         ]
