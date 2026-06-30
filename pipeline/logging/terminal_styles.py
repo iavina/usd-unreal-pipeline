@@ -1,7 +1,4 @@
-"""Terminal icons, color, and column formatting for validation output.
-
-Nerd Font icons require a Nerd Font-patched terminal font when color mode is enabled.
-"""
+"""Terminal icons, color, and column formatting for validation output."""
 
 import os
 import sys
@@ -10,8 +7,8 @@ from io import StringIO
 from rich.console import Console
 from rich.text import Text
 
-PASS_ICON = "\uf058"
-FAIL_ICON = "\uf057"
+PASS_ICON = "\u2705"
+FAIL_ICON = "\u274c"
 PASS_LABEL = "[PASS]"
 FAIL_LABEL = "[FAILED]"
 SUMMARY_TITLE = "Validation Summary"

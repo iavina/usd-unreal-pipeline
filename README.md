@@ -41,4 +41,4 @@ Exit code `0` when all files pass; `1` when any file fails.
 
 Project design and changes follow [Structured Prompt-Driven Development (SPDD)](https://martinfowler.com/articles/structured-prompt-driven/). Prompts and analysis live under `spdd/`.
 
-Styled terminal output uses color and Nerd Font icons when supported. Set `NO_COLOR=1` to disable styling.
+Styled terminal output uses color and emoji status icons when supported. Set `NO_COLOR=1` to disable styling.
