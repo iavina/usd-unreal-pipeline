@@ -9,13 +9,15 @@ from pipeline.validation.models import FileValidationResult
 def validate_files(
     files: list[Path], rules: list[ValidationRule]
 ) -> list[FileValidationResult]:
-    """Apply all enabled rules to every file and aggregate per-file results."""
+    """Apply applicable enabled rules to every file and aggregate per-file results."""
     results: list[FileValidationResult] = []
 
     for file in files:
         rule_results = []
 
         for rule in rules:
+            if not rule.applies_to(file):
+                continue
             rule_results.extend(rule.validate(file))
 
         results.append(

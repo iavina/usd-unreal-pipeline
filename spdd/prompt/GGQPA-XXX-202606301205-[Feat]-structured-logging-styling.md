@@ -143,8 +143,8 @@ LogRenderer --> TerminalStyles : uses
    - `render_file_result(result: FileValidationResult) -> list[str]`
      - Logic:
        - Build the first line as `{status_tag:<status_width}{GAP}{file_path}` using `format_status_tag` and `status_column_width`.
-       - Keep failed rule lines unchanged in structure: indented `- {rule}: {message}`.
-       - Keep one blank line after each failed file block.
+       - Under every file, render one indented line per entry in `result.rule_results` (not only `failed_rule_results`) using `- {rule}: {message}`, so pass rows still show which rules ran and their messages.
+       - Keep one blank line after each file block that has rule detail lines.
    - `render_summary(results: list[FileValidationResult], file_count: int) -> list[str]`
      - Logic:
        - Compute passed, failed, and failed rule check counts as today.
@@ -199,7 +199,7 @@ LogRenderer --> TerminalStyles : uses
    - Nerd Font icons must use the specified codepoints when color is enabled.
    - Summary section title must be exactly `Validation Summary`.
    - Summary metrics must use column alignment, not `Label: value` inline strings.
-   - Per-file failed rule detail format remains indented bullet lines under failed files.
+   - Per-file rule detail format remains indented bullet lines under every file for all severities (`info`, `warning`, `error`).
 
 2. Non-regression constraints:
    - Validation rules, config loading, discovery, and exit codes must behave identically to the current implementation.

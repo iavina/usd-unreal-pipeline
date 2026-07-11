@@ -1,17 +1,22 @@
 """Render validation results into stable, human-readable terminal output."""
 
+from collections import defaultdict
+
 import typer
 
 from pipeline.logging.terminal_styles import (
     SUMMARY_LABELS,
+    format_severity_label,
     format_status_tag,
     format_summary_header,
     format_summary_rows,
 )
+from pipeline.rules.models import Severity
 from pipeline.validation.models import FileValidationResult
 
 GAP = " " * 4
-FAILED_RULE_INDENT = " " * 10
+RULE_INDENT = " " * 10
+CATEGORY_SUMMARY_TITLE = "By Category"
 
 
 def render_file_result(result: FileValidationResult) -> list[str]:
@@ -19,13 +24,44 @@ def render_file_result(result: FileValidationResult) -> list[str]:
     status_tag = format_status_tag(result.passed)
     lines = [f"{status_tag}{GAP}{result.file}"]
 
-    if not result.passed:
-        for failed_rule in result.failed_rule_results:
-            lines.append(
-                f"{FAILED_RULE_INDENT}- {failed_rule.rule}: {failed_rule.message}"
-            )
+    for rule_result in result.rule_results:
+        severity = format_severity_label(rule_result.severity)
+        lines.append(
+            f"{RULE_INDENT}- [{rule_result.category.value}] "
+            f"{rule_result.rule} {severity}: "
+            f"{rule_result.message}"
+        )
+
+    if result.rule_results:
         lines.append("")
 
+    return lines
+
+
+def render_category_summary(results: list[FileValidationResult]) -> list[str]:
+    """Render per-category checks/errors/warnings for categories with results."""
+    checks: dict[str, int] = defaultdict(int)
+    errors: dict[str, int] = defaultdict(int)
+    warnings: dict[str, int] = defaultdict(int)
+
+    for result in results:
+        for rule_result in result.rule_results:
+            key = rule_result.category.value
+            checks[key] += 1
+            if rule_result.severity == Severity.ERROR:
+                errors[key] += 1
+            elif rule_result.severity == Severity.WARNING:
+                warnings[key] += 1
+
+    if not checks:
+        return []
+
+    lines = ["", CATEGORY_SUMMARY_TITLE]
+    for category in sorted(checks):
+        lines.append(
+            f"{category}  checks={checks[category]}  "
+            f"errors={errors[category]}  warnings={warnings[category]}"
+        )
     return lines
 
 
@@ -48,6 +84,7 @@ def render_summary(results: list[FileValidationResult], file_count: int) -> list
         "",
         format_summary_header(),
         *format_summary_rows(rows),
+        *render_category_summary(results),
         "",
     ]
 

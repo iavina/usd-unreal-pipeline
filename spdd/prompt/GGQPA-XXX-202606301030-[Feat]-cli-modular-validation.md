@@ -32,6 +32,7 @@ class FileFormatRule {
 }
 
 class FileSizeRule {
+    +int warn_bytes
     +int max_bytes
     +validate(file: Path) List~RuleResult~
 }
@@ -190,6 +191,7 @@ PipelineConfig --> ValidationRule : enables
    - `rules.file_format.enabled = true`
    - `rules.file_format.allowed_extensions = [".usd", ".usda", ".usdc", ".usdz"]`
    - `rules.file_size.enabled = true`
+   - `rules.file_size.warn_bytes = 83886080`
    - `rules.file_size.max_bytes = 104857600`
 5. Constraints:
    - Ignore unknown JSON keys rather than failing, unless JSON parsing itself fails.
@@ -214,8 +216,8 @@ PipelineConfig --> ValidationRule : enables
       - If `result.passed` is true, render one line in the format `PASS     {file}`.
       - If `result.passed` is false, render one line in the format `FAILED   {file}`.
       - Use a fixed-width status column of 6 characters, followed by exactly 4 spaces, followed by the file path so all file paths align vertically.
-      - For failed files, render one indented line per failed `RuleResult` directly below the summary line using the format `          - {rule}: {message}`.
-      - Leave one blank line after each failed file block to keep output grouped and readable.
+      - Under every file summary line, render one indented line per `RuleResult` in `rule_results` order using the format `          - {rule}: {message}`, including `info`, `warning`, and `error` results so pass rows retain per-rule granularity.
+      - Leave one blank line after each file block that has rule detail lines to keep output grouped and readable.
    - `render_summary(results: list[FileValidationResult], file_count: int) -> list[str]`
     - Logic:
       - Render a structured run summary before file results.
@@ -257,17 +259,21 @@ PipelineConfig --> ValidationRule : enables
 
 ### Implement File Size Rule - `pipeline/rules/file_size.py`
 
-1. Responsibility: Validate file size against configured maximum bytes.
+1. Responsibility: Validate file size against configured soft (`warn_bytes`) and hard (`max_bytes`) thresholds so all three severities are exercised.
 2. Attributes:
+   - `warn_bytes: int`
    - `max_bytes: int`
 3. Methods:
    - `validate(file: Path) -> list[RuleResult]`
     - Logic:
       - Read file size from filesystem metadata.
-      - If size is less than or equal to `max_bytes`, return one `RuleResult` with severity `info` and message `File size within limit`.
       - If size is greater than `max_bytes`, return one `RuleResult` with severity `error` and message `File exceeds max size of {max_bytes} bytes`.
+      - Else if size is greater than `warn_bytes`, return one `RuleResult` with severity `warning` and message `File size exceeds soft limit of {warn_bytes} bytes`.
+      - Else return one `RuleResult` with severity `info` and message `File size within limit`.
 4. Constraints:
    - Rule name must be `file_size`.
+   - `warning` results must not mark the file as failed; only `error` fails the file.
+   - When `warn_bytes` is greater than or equal to `max_bytes`, the soft band is empty and sizes at or below `max_bytes` remain `info`.
 
 ### Implement Rule Registry - `pipeline/rules/registry.py`
 
@@ -276,7 +282,7 @@ PipelineConfig --> ValidationRule : enables
    - `build_rules(config: PipelineConfig) -> list[ValidationRule]`
     - Logic:
       - Instantiate `FileFormatRule` when `rules.file_format.enabled` is true.
-      - Instantiate `FileSizeRule` when `rules.file_size.enabled` is true.
+      - Instantiate `FileSizeRule` when `rules.file_size.enabled` is true, passing `warn_bytes` and `max_bytes` from config.
       - Pass rule-specific settings from configuration into each rule instance.
       - Return rules in stable order: `file_format`, then `file_size`.
 3. Constraints:
@@ -423,16 +429,17 @@ PipelineConfig --> ValidationRule : enables
    - Rules must return `RuleResult` objects, not logging-owned models.
    - Validation must own `RuleResult`, `FileValidationResult`, and `Severity`.
    - Each file must render exactly one `PASS` or `FAILED` summary line using a fixed-width status tag, a 4-space gap, and the file path.
-   - Failed files must list failed rules on indented lines directly below the summary line.
+   - Every file block must list each applied rule result on indented lines directly below the summary line, not only failed rules.
    - Output must include a whole-run summary with files processed, passed, failed, and failed rule check count.
    - Severities must be limited to `info`, `warning`, and `error` for internal rule evaluation.
+   - `file_size` must emit `warning` when size is above `warn_bytes` and at or below `max_bytes`.
 
 2. Execution constraints:
    - Validation failures must not stop processing of remaining files.
    - Rule failures on one file must not stop remaining rules on that same file.
 
 3. Configuration constraints:
-   - Built-in defaults must enable both rules with USD-like extensions and `max_bytes = 104857600`.
+   - Built-in defaults must enable both rules with USD-like extensions, `warn_bytes = 83886080`, and `max_bytes = 104857600`.
    - JSON config path is optional; defaults must work without it.
    - Missing config file path must fail with `Config file does not exist: {config_path}`.
    - Invalid JSON must fail with `Invalid config file: {config_path}`.

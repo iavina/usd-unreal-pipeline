@@ -1,21 +1,9 @@
-"""Validation result objects produced by rules and consumed by renderers."""
+"""File-level validation results aggregated by the runner."""
 
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 
-
-class Severity(str, Enum):
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-
-
-@dataclass(frozen=True)
-class RuleResult:
-    severity: Severity
-    rule: str
-    message: str
+from pipeline.rules.models import RuleResult, Severity
 
 
 @dataclass

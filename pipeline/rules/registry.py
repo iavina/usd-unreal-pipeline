@@ -1,32 +1,39 @@
-"""Build enabled validation rule instances from pipeline configuration."""
+"""Register and construct validation rules from configuration."""
 
-from pipeline.config import PipelineConfig
-from pipeline.rules.builtins import FileFormatRule, FileSizeRule
+from __future__ import annotations
+
+from pipeline.config.models import PipelineConfig
 from pipeline.rules.validation_rule import ValidationRule
+
+_REGISTERED_RULES: list[type[ValidationRule]] = []
+
+
+def register_rule(cls: type[ValidationRule]) -> type[ValidationRule]:
+    """Decorator that adds a rule class to the registry when its module is imported."""
+    if cls not in _REGISTERED_RULES:
+        _REGISTERED_RULES.append(cls)
+    return cls
+
+
+def load_rule_packages() -> None:
+    """Import category packages so @register_rule decorators run."""
+    import pipeline.rules.filesystem  # noqa: F401
+    import pipeline.rules.geometry  # noqa: F401
+    import pipeline.rules.textures  # noqa: F401
+    import pipeline.rules.unreal  # noqa: F401
 
 
 def build_rules(config: PipelineConfig) -> list[ValidationRule]:
+    """Construct enabled rules whose categories are enabled."""
+    load_rule_packages()
     rules: list[ValidationRule] = []
 
-    format_settings = config.rule_settings("file_format")
-    if format_settings.get("enabled", False):
-        rules.append(
-            FileFormatRule(
-                enabled=True,
-                allowed_extensions=format_settings.get(
-                    "allowed_extensions",
-                    [".usd", ".usda", ".usdc", ".usdz"],
-                ),
-            )
-        )
-
-    size_settings = config.rule_settings("file_size")
-    if size_settings.get("enabled", False):
-        rules.append(
-            FileSizeRule(
-                enabled=True,
-                max_bytes=int(size_settings.get("max_bytes", 104857600)),
-            )
-        )
+    for rule_cls in _REGISTERED_RULES:
+        settings = config.rule_settings(rule_cls.name)
+        if not settings.get("enabled", False):
+            continue
+        if not config.category_enabled(rule_cls.category.value):
+            continue
+        rules.append(rule_cls.from_settings(settings))
 
     return rules

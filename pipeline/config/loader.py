@@ -31,7 +31,10 @@ def load_config(config_path: Path | None) -> PipelineConfig:
     config_data = copy.deepcopy(DEFAULT_CONFIG)
 
     if config_path is None:
-        return PipelineConfig(rules=config_data["rules"])
+        return PipelineConfig(
+            categories=config_data["categories"],
+            rules=config_data["rules"],
+        )
 
     if not config_path.exists():
         raise typer.BadParameter(f"Config file does not exist: {config_path}")
@@ -44,7 +47,16 @@ def load_config(config_path: Path | None) -> PipelineConfig:
     if not isinstance(loaded, dict):
         raise typer.BadParameter(f"Invalid config file: {config_path}")
 
+    override: dict[str, Any] = {}
+    if "categories" in loaded and isinstance(loaded["categories"], dict):
+        override["categories"] = loaded["categories"]
     if "rules" in loaded and isinstance(loaded["rules"], dict):
-        config_data = _deep_merge(config_data, {"rules": loaded["rules"]})
+        override["rules"] = loaded["rules"]
 
-    return PipelineConfig(rules=config_data["rules"])
+    if override:
+        config_data = _deep_merge(config_data, override)
+
+    return PipelineConfig(
+        categories=config_data["categories"],
+        rules=config_data["rules"],
+    )

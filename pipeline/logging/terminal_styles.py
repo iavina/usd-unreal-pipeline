@@ -7,6 +7,8 @@ from io import StringIO
 from rich.console import Console
 from rich.text import Text
 
+from pipeline.rules.models import Severity
+
 PASS_ICON = "\u2705"
 FAIL_ICON = "\u274c"
 PASS_LABEL = "[PASS]"
@@ -58,6 +60,18 @@ def format_status_tag(passed: bool) -> str:
         return padded
     color = "green" if passed else "red"
     return _to_ansi(padded, color)
+
+
+def format_severity_label(severity: Severity) -> str:
+    """Return a severity tag; color error/warning only when styling is enabled."""
+    label = f"({severity.value})"
+    if not color_enabled():
+        return label
+    if severity == Severity.ERROR:
+        return _to_ansi(label, "red")
+    if severity == Severity.WARNING:
+        return _to_ansi(label, "yellow")
+    return label
 
 
 def format_summary_header() -> str:
