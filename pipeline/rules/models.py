@@ -23,3 +23,4 @@ class RuleResult:
     rule: str
     category: RuleCategory
     message: str
+    skipped: bool = False

@@ -1,14 +1,14 @@
-"""File-level validation results aggregated by the runner."""
+"""Result types used by the runner."""
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
+from pipeline.core.metadata import AssetMetadata
 from pipeline.rules.models import RuleResult, Severity
 
 
 @dataclass
-class FileValidationResult:
-    file: Path
+class AssetValidationResult:
+    asset: AssetMetadata
     rule_results: list[RuleResult] = field(default_factory=list)
 
     @property

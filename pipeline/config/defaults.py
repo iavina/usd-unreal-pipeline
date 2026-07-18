@@ -7,6 +7,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "textures": False,
         "unreal": False,
     },
+    "host": {
+        # Unreal discovery root (Content Browser path). Ignored by CLI.
+        "content_root": "/Game/ExampleContent",
+    },
     "rules": {
         "file_format": {
             "enabled": True,
@@ -22,6 +26,22 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "file_name": {
             "enabled": True,
             "forbid_spaces": True,
+            "apply_to_extensions": [],
+        },
+        "unreal_path": {
+            "enabled": True,
+            "require_prefix": "/Game",
+            "forbid_spaces": True,
+            "apply_to_extensions": [],
+        },
+        "mesh_closed": {
+            "enabled": True,
+            "require_closed": True,
+            "apply_to_extensions": [],
+        },
+        "texture_max_resolution": {
+            "enabled": True,
+            "max_resolution": 2048,
             "apply_to_extensions": [],
         },
     },

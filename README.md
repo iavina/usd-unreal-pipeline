@@ -1,12 +1,13 @@
 # USD Unreal Pipeline
 
-CLI for discovering and validating USD asset directories. Domain-specific rules beyond filesystem checks are planned; geometry, texture, and Unreal validation are not implemented yet.
+Validator for USD / content pipelines. Runs from the CLI via `uv`, or from Unreal Engine editor Python through a shared validation core.
 
 ## Prerequisites
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- A USD directory to explore — if you do not have one handy, Pixar's [Kitchen Set](https://openusd.org/release/dl_kitchen_set.html) sample scene works well
+- A directory of assets to explore — Pixar's [Kitchen Set](https://openusd.org/release/dl_kitchen_set.html) works well for CLI smoke tests
+- Optional: Unreal Editor with Python enabled, for the Unreal host
 
 ## Setup
 
@@ -23,7 +24,7 @@ Edit `.env` and set a default explore directory:
 PIPELINE_DEV_DIRECTORY=C:\path\to\assets
 ```
 
-## Usage
+## Usage (CLI)
 
 Discover files recursively and validate them against enabled rules:
 
@@ -33,18 +34,26 @@ uv run pipeline explore C:\path\to\assets
 uv run pipeline explore --config path\to\config.json
 ```
 
-Optional JSON config overrides defaults (rule enablement, allowed extensions, size thresholds, naming options). Built-in defaults allow `.usd`, `.usda`, `.usdc`, `.usdz` up to 100 MB, warn above 80 MB, and forbid spaces in filenames.
+Optional JSON config overrides defaults (category toggles, rule enablement, allowed extensions, size thresholds, naming options). See [RULES.md](RULES.md) for the built-in catalog. Defaults enable filesystem rules (USD-like extensions, 100 MB max / 80 MB warn, no spaces in names) and leave `geometry` / `textures` / `unreal` off for CLI.
 
-Exit code `0` when all files pass; `1` when any file fails.
+Exit code `0` when all assets pass; `1` when any asset fails. Skipped Unreal-only checks (when the editor module is absent) do not fail the run.
 
-## Architecture
+## Usage (Unreal)
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout, validation flow, rule categories, and how the registry fits in.
+In the editor, use **Execute Python Script** and choose:
 
-Short version: `cli` orchestrates; `config` supplies category/rule settings; `rules` are grouped by category packages; `validation` discovers files and runs rules; `logging` prints structured results. See Architecture for `@register_rule`, `from_settings`, and how to add a rule.
+`scripts/unreal_validate.py`
+
+That script bootstraps `sys.path`, loads `scripts/unreal_validate_config.json` (enables `unreal`, `geometry`, and `textures`), and validates assets under the path in `host.content_root` (default `/Game/ExampleContent`). Change that field to scan a different Content Browser folder. Output goes to the Unreal log.
+
+## Docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — package layout, context contract, Unreal boundary, how to add a rule
+- [RULES.md](RULES.md) — available rules, settings, and outcomes
+- `spdd/` — Structured Prompt-Driven Development design history
 
 ## Development
 
-Project design and changes follow [Structured Prompt-Driven Development (SPDD)](https://martinfowler.com/articles/structured-prompt-driven/). Prompts and analysis live under `spdd/`.
+Project design and changes follow [Structured Prompt-Driven Development (SPDD)](https://martinfowler.com/articles/structured-prompt-driven/).
 
-Styled terminal output uses color and status icons when supported. Set `NO_COLOR=1` to disable styling.
+Output uses shared emoji labels. CLI adds simple ANSI; Unreal uses log/warning/error channels (no ANSI).

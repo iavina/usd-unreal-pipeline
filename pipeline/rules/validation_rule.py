@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pipeline.rules.models import RuleCategory, RuleResult
+from pipeline.rules.models import RuleCategory, RuleResult, Severity
+
+if TYPE_CHECKING:
+    from pipeline.core.context import ValidationContext
+    from pipeline.core.metadata import AssetMetadata
 
 
 def normalize_extensions(values: list[str] | None) -> list[str]:
@@ -33,12 +36,25 @@ class ValidationRule(ABC):
     def from_settings(cls, settings: dict[str, Any]) -> ValidationRule:
         """Build a rule instance from its config settings dict."""
 
-    def applies_to(self, file: Path) -> bool:
-        """Return whether this rule should run for the given file."""
+    def applies_to(self, asset: AssetMetadata, ctx: ValidationContext) -> bool:
+        """Return whether this rule should run for the given asset."""
+        del ctx
         if not self.apply_to_extensions:
             return True
-        return file.suffix.lower() in self.apply_to_extensions
+        return asset.extension.lower() in self.apply_to_extensions
+
+    def make_skipped(self, reason: str) -> RuleResult:
+        """Non-failing skip when a host dependency is unavailable."""
+        return RuleResult(
+            severity=Severity.INFO,
+            rule=self.name,
+            category=self.category,
+            message=f"[SKIPPED] {reason}",
+            skipped=True,
+        )
 
     @abstractmethod
-    def validate(self, file: Path) -> list[RuleResult]:
-        """Validate a single file and return rule-level results."""
+    def validate(
+        self, asset: AssetMetadata, ctx: ValidationContext
+    ) -> list[RuleResult]:
+        """Validate a single asset and return rule-level results."""

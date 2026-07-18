@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from pipeline.rules.filesystem.base import FilesystemRule
-from pipeline.rules.registry import register_rule
-from pipeline.rules.validation_rule import normalize_extensions
-from pipeline.rules.models import RuleResult, Severity
+from pipeline.core.context import ValidationContext
+from pipeline.core.metadata import AssetMetadata
+from pipeline.rules.models import RuleCategory, RuleResult, Severity
+from pipeline.rules.validation_rule import ValidationRule, normalize_extensions
 
 
-@register_rule
-class FileFormatRule(FilesystemRule):
+class FileFormatRule(ValidationRule):
     name = "file_format"
+    category = RuleCategory.FILESYSTEM
 
     def __init__(
         self,
@@ -34,8 +33,11 @@ class FileFormatRule(FilesystemRule):
             apply_to_extensions=settings.get("apply_to_extensions"),
         )
 
-    def validate(self, file: Path) -> list[RuleResult]:
-        suffix = file.suffix.lower()
+    def validate(
+        self, asset: AssetMetadata, ctx: ValidationContext
+    ) -> list[RuleResult]:
+        del ctx
+        suffix = asset.extension.lower()
         if suffix in self.allowed_extensions:
             return [
                 RuleResult(

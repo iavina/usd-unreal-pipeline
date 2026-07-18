@@ -1,39 +1,57 @@
-"""Register and construct validation rules from configuration."""
+"""Discover and construct validation rules from category packages."""
 
 from __future__ import annotations
 
-from pipeline.config.models import PipelineConfig
+import importlib
+import inspect
+import pkgutil
+
+from pipeline.config.loader import PipelineConfig
+from pipeline.rules.models import RuleCategory
 from pipeline.rules.validation_rule import ValidationRule
 
-_REGISTERED_RULES: list[type[ValidationRule]] = []
 
+def _discover_rule_classes(package_name: str) -> list[type[ValidationRule]]:
+    """Import modules in a category package and collect concrete rule classes."""
+    package = importlib.import_module(package_name)
+    if not hasattr(package, "__path__"):
+        return []
 
-def register_rule(cls: type[ValidationRule]) -> type[ValidationRule]:
-    """Decorator that adds a rule class to the registry when its module is imported."""
-    if cls not in _REGISTERED_RULES:
-        _REGISTERED_RULES.append(cls)
-    return cls
+    discovered: list[type[ValidationRule]] = []
+    for module_info in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
+        module_leaf = module_info.name.rsplit(".", 1)[-1]
+        if module_leaf.startswith("_"):
+            continue
 
+        module = importlib.import_module(module_info.name)
+        for obj in vars(module).values():
+            if not isinstance(obj, type):
+                continue
+            if obj is ValidationRule or not issubclass(obj, ValidationRule):
+                continue
+            if inspect.isabstract(obj):
+                continue
+            if obj not in discovered:
+                discovered.append(obj)
 
-def load_rule_packages() -> None:
-    """Import category packages so @register_rule decorators run."""
-    import pipeline.rules.filesystem  # noqa: F401
-    import pipeline.rules.geometry  # noqa: F401
-    import pipeline.rules.textures  # noqa: F401
-    import pipeline.rules.unreal  # noqa: F401
+    return sorted(discovered, key=lambda rule_cls: rule_cls.name)
 
 
 def build_rules(config: PipelineConfig) -> list[ValidationRule]:
-    """Construct enabled rules whose categories are enabled."""
-    load_rule_packages()
+    """Construct enabled rules from enabled category packages."""
     rules: list[ValidationRule] = []
 
-    for rule_cls in _REGISTERED_RULES:
-        settings = config.rule_settings(rule_cls.name)
-        if not settings.get("enabled", False):
+    for category in RuleCategory:
+        if not config.category_enabled(category.value):
             continue
-        if not config.category_enabled(rule_cls.category.value):
-            continue
-        rules.append(rule_cls.from_settings(settings))
+
+        package_name = f"pipeline.rules.{category.value}"
+        for rule_cls in _discover_rule_classes(package_name):
+            settings = config.rule_settings(rule_cls.name)
+            if not settings.get("enabled", False):
+                continue
+            if rule_cls.category is not category:
+                continue
+            rules.append(rule_cls.from_settings(settings))
 
     return rules

@@ -1,0 +1,11 @@
+{
+  "categories": {
+    "filesystem": false,
+    "geometry": true,
+    "textures": true,
+    "unreal": true
+  },
+  "host": {
+    "content_root": "/Game/ExampleContent"
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Extend the modular filesystem validator by enabling or disabling categories through configuration, reorganizing rules into category packages with category base classes, registering rules via a decorator bootstrapped by category-package imports, constructing rules with `from_settings`, adding a category-grouped run summary, and supporting simple extension-based conditional skipping — without Unreal integration, geometry content rule bodies, or plugin auto-discovery.
+Extend the modular filesystem validator by enabling or disabling categories through configuration, reorganizing rules into category packages with category base classes, discovering concrete rules from those category packages, constructing rules with `from_settings`, adding a category-grouped run summary, and supporting simple extension-based conditional skipping — without Unreal integration, geometry content rule bodies, or external plugin entry points.
 
 ## Entities
 
@@ -13,8 +13,30 @@ direction TB
 class PipelineConfig {
     +dict categories
     +dict rules
-    +category_enabled(category) bool
+    +category_enabled(category: str) bool
     +rule_settings(name) dict
+}
+
+class RuleCategory {
+    <<enumeration>>
+    filesystem
+    geometry
+    textures
+    unreal
+}
+
+class Severity {
+    <<enumeration>>
+    info
+    warning
+    error
+}
+
+class RuleResult {
+    +Severity severity
+    +str rule
+    +RuleCategory category
+    +str message
 }
 
 class ValidationRule {
@@ -37,10 +59,14 @@ class FileSizeRule
 class FileNameRule
 
 class RuleRegistry {
-    +register_rule(cls) cls
-    +list registered_rule_classes
-    +load_rule_packages() None
+    +discover_rule_classes(package_name) list
     +build_rules(config) List~ValidationRule~
+}
+
+class FileValidationResult {
+    +Path file
+    +list rule_results
+    +bool passed
 }
 
 class ValidationRunner {
@@ -49,190 +75,206 @@ class ValidationRunner {
 
 class LogRenderer {
     +render_summary(results, file_count) list~str~
+    +render_category_summary(results) list~str~
 }
 
 FilesystemRule --|> ValidationRule
 FileFormatRule --|> FilesystemRule
 FileSizeRule --|> FilesystemRule
 FileNameRule --|> FilesystemRule
-RuleRegistry --> ValidationRule : registers and constructs
+ValidationRule --> RuleCategory : declares
+RuleResult --> RuleCategory : carries
+RuleResult --> Severity : uses
+FileValidationResult --> RuleResult : aggregates
+RuleRegistry --> ValidationRule : discovers and constructs
 ValidationRunner --> ValidationRule : applies_to then validate
 PipelineConfig --> RuleRegistry : feeds
-LogRenderer --> RuleRegistry : none
+LogRenderer --> FileValidationResult : consumes
 ```
 
 ## Approach
 
 1. Category packages replace `builtins/`:
-   - Move live rules into `pipeline/rules/filesystem/`.
-   - Add reserved packages `geometry/`, `textures/`, and `unreal/` with category base classes (and no live rule bodies yet unless needed for package validity).
-   - Remove `pipeline/rules/builtins/` after the move.
+   - Live rules live under `pipeline/rules/filesystem/`.
+   - Reserved packages `geometry/`, `textures/`, and `unreal/` hold category base classes only.
+   - `builtins/` is removed.
 
 2. Category identity from category base classes:
-   - Each category package defines a base such as `FilesystemRule` that sets `category = RuleCategory.FILESYSTEM`.
-   - Concrete rules subclass the base in their package; they do not independently invent category values.
-   - Folder layout and base class stay aligned by convention.
+   - Each category package defines a base such as `FilesystemRule` that sets `category`.
+   - Concrete rules subclass the local base; folder layout and base class stay aligned by convention.
 
-3. Decorator registration with explicit import bootstrap:
-   - Provide `@register_rule` that appends the class to an ordered registry list when the module is imported.
-   - Each category package `__init__` imports its concrete rule modules so decorators run.
-   - Registry loads category packages explicitly (import filesystem always for now; reserved packages may be imported for base availability or deferred until they have rules — prefer importing package modules in a stable listed order).
-   - Document that forgetting to import a new rule module means it will not register.
-   - Do not scan packages dynamically and do not use entry points.
+3. Category-package discovery (replaces decorator registration):
+   - For each enabled `RuleCategory`, import `pipeline.rules.<category>`.
+   - Discover sibling modules in that package (skip `base` and private modules).
+   - Collect concrete non-abstract `ValidationRule` subclasses whose `category` matches.
+   - Sort discovered classes by `name` for stable order.
+   - Do not use `@register_rule`, parent import lists, or `load_rule_packages()` side-effect bootstraps.
+   - Do not use external plugin entry points; discovery is limited to in-repo category packages.
 
 4. Construction via `from_settings`:
    - Each concrete rule implements `from_settings(settings)`.
-   - `build_rules` walks registered classes, applies category/rule enable gates, then calls `from_settings`.
-   - Remove `RuleSpec` / `_build_*` factory helpers.
+   - `build_rules` calls `from_settings` after category/rule enable checks.
 
-5. Category configuration:
-   - Top-level defaults: `categories.filesystem = true`, `geometry/textures/unreal = false`.
-   - Both category enabled and rule enabled must be true to construct/run a rule.
+5. Rule-domain models:
+   - `RuleCategory`, `Severity`, and `RuleResult` live in `pipeline/rules/models.py`.
+   - `FileValidationResult` remains in `pipeline/validation/models.py` and aggregates rule results.
+   - Config does not import rule models; `category_enabled` accepts a string key.
 
-6. Conditional skip:
+6. Category configuration:
+   - Defaults: `filesystem: true`, `geometry/textures/unreal: false`.
+   - Both category enabled and rule enabled must be true to construct a rule.
+   - Disabled categories are not scanned.
+
+7. Conditional skip:
    - Optional per-rule `apply_to_extensions` (empty/missing = all files).
    - Shared `applies_to(file)` on the rule contract; runner skips with no results when false.
 
-7. Category summary:
-   - Keep existing totals; add a `By Category` section for categories that emitted at least one result, showing checks, errors, and warnings.
+8. Category summary:
+   - Keep existing totals; add `By Category` for categories that emitted results (checks, errors, warnings).
 
-8. Docs:
-   - Update `ARCHITECTURE.md` for category packages, base classes, decorator bootstrap, `from_settings`, category toggles, extension filters, and category summary.
+9. Docs:
+   - `ARCHITECTURE.md` describes category packages, discovery, `from_settings`, toggles, filters, and summary.
 
 ## Structure
 
 ### Inheritance Relationships
 
-1. `ValidationRule` is the shared abstract contract (`name`, `category`, `enabled`, `apply_to_extensions`, `from_settings`, `applies_to`, `validate`).
-2. `FilesystemRule` (and reserved category bases) subclass `ValidationRule` and fix `category`.
-3. `FileFormatRule`, `FileSizeRule`, and `FileNameRule` subclass `FilesystemRule` and use `@register_rule`.
+1. `ValidationRule` is the shared abstract contract.
+2. Category bases (`FilesystemRule`, `GeometryRule`, `TexturesRule`, `UnrealRule`) subclass `ValidationRule` and fix `category`.
+3. Live concrete rules subclass `FilesystemRule` and implement `from_settings` / `validate`.
 
 ### Dependencies
 
-1. Decorator/registry module is importable by rule modules without circular import failures.
-2. Category package `__init__` imports concrete rule modules for side-effect registration.
-3. `build_rules` depends on registered classes + `PipelineConfig` gates + `from_settings`.
+1. `pipeline/rules/models.py` owns `RuleCategory`, `Severity`, `RuleResult`.
+2. `pipeline/validation/models.py` owns `FileValidationResult` and imports `RuleResult` / `Severity` from rules.
+3. `registry.py` discovers modules under enabled category packages and constructs via `from_settings`.
 4. Runner depends only on `ValidationRule` (`applies_to`, `validate`).
-5. Renderer aggregates results by category for the new summary section.
-6. Config loader merges `categories` and `rules`.
+5. Renderer consumes `FileValidationResult` and rule severities/categories for summaries.
+6. Config loader merges `categories` and `rules`; `PipelineConfig.category_enabled` takes `str` only (no rules import).
 
 ### Layered Architecture
 
 1. Config Layer: category toggles and per-rule settings including `apply_to_extensions`.
-2. Rules Layer: category packages, category bases, concrete rules, decorator registry.
-3. Validation Layer: runner with conditional skip.
+2. Rules Layer: models, category packages, category bases, concrete rules, discovery registry.
+3. Validation Layer: discovery of files, runner with conditional skip, file-level aggregation.
 4. Output Layer: per-file details plus category summary.
 5. Docs Layer: architecture extension guide.
 
 ## Operations
 
-### Introduce Registry Decorator API - `pipeline/rules/registry.py` (or split `registration.py` if needed to avoid import cycles)
+### Own Rule Models - `pipeline/rules/models.py`
 
-1. Responsibility: Own registration list and rule package bootstrap.
-2. Methods / API:
-   - `register_rule(cls)` decorator appends class to an ordered list if not already present and returns cls.
-   - `load_rule_packages()` imports category packages in stable order so decorators run.
-   - `build_rules(config)` calls `load_rule_packages()`, then for each registered class: skip if category disabled or rule disabled; otherwise append `cls.from_settings(settings)`.
+1. Responsibility: Hold rule-domain vocabulary.
+2. Types:
+   - `Severity`: `info`, `warning`, `error`
+   - `RuleCategory`: `filesystem`, `geometry`, `textures`, `unreal`
+   - `RuleResult`: severity, rule, category, message
 3. Constraints:
-   - No `_build_*` helpers.
-   - No dynamic filesystem package scanning.
-   - Preserve deterministic order via documented import order in category `__init__` files and package load order.
+   - Validation must not redefine these types.
 
-### Define Category Base Classes and Packages
+### Implement Category Discovery Registry - `pipeline/rules/registry.py`
 
-1. Responsibility: Replace `builtins/` with domain packages.
-2. Create:
-   - `pipeline/rules/filesystem/` with `FilesystemRule` base and moved `file_format`, `file_size`, `file_name` modules.
-   - `pipeline/rules/geometry/`, `textures/`, `unreal/` with category base classes only (reserved).
-3. Logic:
-   - Update each live rule to subclass `FilesystemRule`, keep `@register_rule`, implement `from_settings`, preserve validation behavior, include optional `apply_to_extensions`.
-   - Category package `__init__` imports concrete rule modules for filesystem; reserved packages export their base class.
-4. Constraints:
-   - Delete old `pipeline/rules/builtins/` modules after migration.
-   - Update any exports/imports that referenced builtins.
+1. Responsibility: Discover and construct rules from enabled category packages.
+2. Methods:
+   - `_discover_rule_classes(package_name) -> list[type[ValidationRule]]`
+     - Import the package; iterate modules with `pkgutil`.
+     - Skip `base` and private modules.
+     - Collect concrete non-abstract `ValidationRule` subclasses.
+     - Return classes sorted by `name`.
+   - `build_rules(config) -> list[ValidationRule]`
+     - For each `RuleCategory`, skip if category disabled.
+     - Discover classes from `pipeline.rules.<category>`.
+     - Skip rule if disabled or `rule_cls.category` mismatches.
+     - Append `rule_cls.from_settings(settings)`.
+3. Constraints:
+   - No `@register_rule`, no `_REGISTERED_RULES`, no `load_rule_packages()`.
+   - No `_build_*` per-rule factories.
+   - No external entry-point plugins.
+
+### Define Category Packages and Bases
+
+1. Responsibility: Domain packaging for rules.
+2. Layout:
+   - `pipeline/rules/filesystem/` with `FilesystemRule` and live rule modules.
+   - Reserved `geometry/`, `textures/`, `unreal/` with bases only.
+3. Constraints:
+   - Category `__init__` need not import every rule module for registration.
+   - `builtins/` must remain removed.
 
 ### Update Rule Contract - `pipeline/rules/validation_rule.py`
 
 1. Responsibility: Shared construction and skip behavior.
-2. Add abstract class method `from_settings(settings)`.
-3. Add `apply_to_extensions` support and `applies_to(file)` as specified in prior stretch design (empty list => all files).
-4. Constraints:
-   - Category remains declared on category base classes for live rules.
+2. Include abstract `from_settings`, `apply_to_extensions`, and `applies_to(file)`.
+3. Constraints:
+   - Category remains declared on category base classes.
 
 ### Extend Configuration - `pipeline/config/defaults.py`, `models.py`, `loader.py`
 
 1. Responsibility: Category toggles + optional extension filters.
-2. Defaults:
-   - `categories.filesystem = true`
-   - `categories.geometry = false`
-   - `categories.textures = false`
-   - `categories.unreal = false`
-   - Per-rule settings keep existing keys; `apply_to_extensions` defaults to empty list / all files.
-3. `PipelineConfig` gains `categories` and `category_enabled(...)`.
+2. Defaults include `categories` map and per-rule `apply_to_extensions: []`.
+3. `PipelineConfig.category_enabled(category: str) -> bool`.
 4. Loader deep-merges `categories` and `rules`.
 5. Constraints:
-   - Missing `categories` in JSON uses defaults.
+   - Config must not import `pipeline.rules` (avoid circular imports).
 
 ### Honor Conditional Skip in Runner - `pipeline/validation/runner.py`
 
-1. Responsibility: Skip non-applicable rules per file.
-2. Logic: if not `rule.applies_to(file)`, continue; else validate as today.
-3. Constraints:
+1. Responsibility: Skip non-applicable rules per file via `applies_to`.
+2. Constraints:
    - All-skipped file remains passed with no detail lines.
 
-### Add Category Summary - `pipeline/logging/renderer.py` (+ styles helpers if useful)
+### Add Category Summary - `pipeline/logging/renderer.py`
 
-1. Responsibility: Group metrics by category after existing summary totals.
-2. Logic: aggregate checks/errors/warnings for categories present in results; omit empty categories.
-3. Constraints:
-   - Do not remove existing Validation Summary totals.
-
-### Update Architecture Docs - `ARCHITECTURE.md` (+ README pointer if needed)
-
-1. Responsibility: Explain category packages, base classes, decorator bootstrap (imports required), `from_settings`, category config, extension filters, category summary.
+1. Responsibility: `By Category` metrics after existing summary totals.
 2. Constraints:
-   - Explicitly warn that a rule module must be imported by its category package to register.
-   - No assignment framing.
+   - Only categories with emitted results; keep Validation Summary totals.
+
+### Update Architecture Docs - `ARCHITECTURE.md`
+
+1. Responsibility: Document category packages, module discovery, `from_settings`, toggles, filters, summary, and model ownership.
+2. Constraints:
+   - Adding a rule is “new module in category package + defaults,” not decorator/import bootstrap.
 
 ### Verify Behavior - manual smoke check
 
-1. Defaults still validate filesystem rules and show filesystem category summary.
-2. Disabling `categories.filesystem` yields no selected rules / existing warning path.
-3. A non-matching `apply_to_extensions` skips that rule’s output for mismatched files.
-4. Confirm `builtins/` is gone and rules import from category packages.
-5. Confirm no `_build_*` factories remain.
+1. Defaults discover filesystem rules and show category summary.
+2. Disabling `categories.filesystem` yields no rules.
+3. `apply_to_extensions` skips mismatched files.
+4. No decorator/`load_rule_packages` remain.
 
 ## Norms
 
 1. Use `uv` and existing Typer/project conventions.
 2. Category folders and category base classes stay aligned.
-3. Registration is decorator + explicit imports; never rely on accidental imports.
+3. Category packages are the catalog via local module discovery.
 4. Construction stays on the rule via `from_settings`.
 5. Runner/CLI remain free of concrete rule class knowledge.
-6. Update architecture docs with structural changes.
-7. Prefer clarity over cleverness; no plugin scanning.
+6. Rule outcome types live in rules; file aggregation lives in validation.
+7. Update architecture docs with structural changes.
+8. Prefer clarity over cleverness; no external plugin systems.
 
 ## Safeguards
 
 1. Functional constraints:
    - Live rules reside under `rules/filesystem/` and subclass `FilesystemRule`.
-   - `@register_rule` + category package imports are required for a rule to be available.
-   - Category disable suppresses all rules in that category.
-   - `from_settings` is required for registered concrete rules.
+   - New rule modules in an enabled category package are discoverable without parent import lists or decorators.
+   - Category disable suppresses scanning/construction for that category.
+   - `from_settings` is required for concrete rules.
    - `apply_to_extensions` empty/missing means all files.
    - Category summary only includes categories with emitted results.
 
 2. Non-regression constraints:
-   - Default explore behavior for current assets remains equivalent aside from intentional new summary section and packaging paths.
+   - Default explore behavior remains equivalent aside from intentional summary/packaging changes.
    - Exit codes remain error-driven.
    - Old JSON without new keys still works.
 
 3. Scope constraints:
    - No Unreal APIs or geometry mesh parsing.
-   - No dynamic plugin discovery.
+   - Discovery limited to in-repo `pipeline.rules.<category>` packages.
    - Reserved category packages must not pretend to implement real checks.
 
 4. Design constraints:
    - Do not keep `builtins/` alongside category packages.
-   - Do not parse `__module__` strings as the primary category source of truth.
-   - Avoid circular imports between decorator definition and rule modules.
+   - Do not use decorator side-effect registration as the primary catalog mechanism.
+   - Do not parse `__module__` strings as the primary category source of truth; category base classes own category identity.
+   - Avoid config → rules import cycles.
