@@ -5,6 +5,7 @@ from typing import Any
 from pipeline.core.context import ValidationContext
 from pipeline.core.metadata import AssetMetadata
 from pipeline.rules.models import RuleCategory, RuleResult, Severity
+from pipeline.rules.path_ignore import common_filter_kwargs, normalize_rule_ignore
 from pipeline.rules.validation_rule import ValidationRule, normalize_extensions
 
 
@@ -17,10 +18,12 @@ class FileFormatRule(ValidationRule):
         enabled: bool,
         allowed_extensions: list[str],
         apply_to_extensions: list[str] | None = None,
+        rule_ignore: list[str] | None = None,
     ) -> None:
         self.enabled = enabled
         self.allowed_extensions = normalize_extensions(allowed_extensions)
         self.apply_to_extensions = normalize_extensions(apply_to_extensions)
+        self.rule_ignore = normalize_rule_ignore(rule_ignore)
 
     @classmethod
     def from_settings(cls, settings: dict[str, Any]) -> FileFormatRule:
@@ -30,7 +33,7 @@ class FileFormatRule(ValidationRule):
                 "allowed_extensions",
                 [".usd", ".usda", ".usdc", ".usdz"],
             ),
-            apply_to_extensions=settings.get("apply_to_extensions"),
+            **common_filter_kwargs(settings),
         )
 
     def validate(

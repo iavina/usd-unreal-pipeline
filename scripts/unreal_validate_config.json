@@ -3,9 +3,24 @@
     "filesystem": false,
     "geometry": true,
     "textures": true,
-    "unreal": true
+    "unreal": true,
+    "materials": true
   },
   "host": {
     "content_root": "/Game/ExampleContent"
+  },
+  "rules": {
+    "material_is_pbr": {
+      "rule_ignore": [
+        "/Game/ExampleContent/UMG/**",
+        "/Game/ExampleContent/Substrate/**"
+      ]
+    },
+    "material_normals_ok": {
+      "rule_ignore": [
+        "/Game/ExampleContent/UMG/**",
+        "/Game/ExampleContent/Substrate/**"
+      ]
+    }
   }
 }

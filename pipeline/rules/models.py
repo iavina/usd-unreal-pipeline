@@ -15,6 +15,7 @@ class RuleCategory(str, Enum):
     GEOMETRY = "geometry"
     TEXTURES = "textures"
     UNREAL = "unreal"
+    MATERIALS = "materials"
 
 
 @dataclass(frozen=True)

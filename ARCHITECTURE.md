@@ -7,7 +7,7 @@ How the USD Unreal Pipeline validator is organized.
 - One shared validation runner for CLI (`uv`) and Unreal editor Python.
 - Clear package ownership — no mixed CLI / Unreal / core concerns.
 - Rules consume `AssetMetadata` and optionally `load_uobject`.
-- Domain rule packages: `filesystem`, `geometry`, `textures`, `unreal`.
+- Domain rule packages: `filesystem`, `geometry`, `textures`, `unreal`, `materials`.
 
 ## Package map
 
@@ -67,9 +67,10 @@ Unreal scan root: `host.content_root` in JSON config (default `/Game/ExampleCont
 1. Create `pipeline/rules/<category>/<rule>.py`.
 2. Subclass `ValidationRule`, set `category = RuleCategory.<X>`.
 3. Implement `from_settings` and `validate(asset, ctx)`.
-4. Prefer metadata fields; for engine objects use `ctx.load_uobject` after an `UNREAL_AVAILABLE` guard when needed.
-5. Add defaults under `rules.<name>` in `pipeline/config/defaults.py`.
-6. Document the rule in [RULES.md](RULES.md).
+4. Load shared filters via `common_filter_kwargs(settings)` (`apply_to_extensions`, `rule_ignore`).
+5. Prefer metadata fields; for engine objects use `ctx.load_uobject` after an `UNREAL_AVAILABLE` guard when needed.
+6. Add defaults under `rules.<name>` in `pipeline/config/defaults.py` (include `rule_ignore: []`).
+7. Document the rule in [RULES.md](RULES.md).
 
 ## Related docs
 

@@ -6,6 +6,11 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from pipeline.rules.models import RuleCategory, RuleResult, Severity
+from pipeline.rules.path_ignore import (
+    common_filter_kwargs,
+    normalize_rule_ignore,
+    path_is_ignored,
+)
 
 if TYPE_CHECKING:
     from pipeline.core.context import ValidationContext
@@ -30,6 +35,7 @@ class ValidationRule(ABC):
     category: RuleCategory
     enabled: bool
     apply_to_extensions: list[str]
+    rule_ignore: list[str]
 
     @classmethod
     @abstractmethod
@@ -39,6 +45,8 @@ class ValidationRule(ABC):
     def applies_to(self, asset: AssetMetadata, ctx: ValidationContext) -> bool:
         """Return whether this rule should run for the given asset."""
         del ctx
+        if path_is_ignored(asset.path, self.rule_ignore):
+            return False
         if not self.apply_to_extensions:
             return True
         return asset.extension.lower() in self.apply_to_extensions
@@ -58,3 +66,11 @@ class ValidationRule(ABC):
         self, asset: AssetMetadata, ctx: ValidationContext
     ) -> list[RuleResult]:
         """Validate a single asset and return rule-level results."""
+
+
+__all__ = [
+    "ValidationRule",
+    "normalize_extensions",
+    "normalize_rule_ignore",
+    "common_filter_kwargs",
+]

@@ -1,0 +1,1 @@
+"""Material-domain validation rules."""
