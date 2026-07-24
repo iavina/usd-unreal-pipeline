@@ -1,6 +1,6 @@
 # USD Unreal Pipeline
 
-Validator for USD / content pipelines. Runs from the CLI via `uv`, or from Unreal Engine editor Python through a shared validation core.
+Validator for USD / content pipelines. Runs from the `pipeline` CLI, or from Unreal Engine editor Python through a shared validation core.
 
 ## Prerequisites
 
@@ -18,33 +18,88 @@ uv sync
 cp .env.example .env   # Windows: copy .env.example .env
 ```
 
-Edit `.env` and set a default explore directory:
-
 ```env
 PIPELINE_DEV_DIRECTORY=C:\path\to\assets
+PIPELINE_UNREAL_EDITOR=C:\Path\To\UnrealEditor.exe
+PIPELINE_UNREAL_PROJECT=C:\Path\To\YourGame.uproject
+# optional override for Cmd:
+# PIPELINE_UNREAL_EDITOR_CMD=C:\Path\To\UnrealEditor-Cmd.exe
 ```
 
-## Usage (CLI)
+After `uv sync`, the `pipeline` console script is installed in the project venv:
 
-Discover files recursively and validate them against enabled rules:
+```powershell
+.\.venv\Scripts\Activate.ps1   # Windows
+pipeline --help
+```
+
+Without activating, you can still use `uv run pipeline …` as a shortcut into that same venv.
+
+## Entry points (end setup)
+
+### 1. Filesystem validate (CLI, no Unreal)
 
 ```bash
-uv run pipeline explore
-uv run pipeline explore C:\path\to\assets
-uv run pipeline explore --config path\to\config.json
+pipeline validate
+pipeline validate C:\path\to\assets
+pipeline validate --config path\to\config.json
 ```
 
-Optional JSON config overrides defaults (category toggles, rule enablement, allowed extensions, size thresholds, naming options). See [RULES.md](RULES.md) for the built-in catalog. Defaults enable filesystem rules (USD-like extensions, 100 MB max / 80 MB warn, no spaces in names) and leave `geometry` / `textures` / `unreal` off for CLI.
+| Arg / env | Meaning |
+|---|---|
+| `directory` | Folder of files to scan (or `PIPELINE_DEV_DIRECTORY`) |
+| `--config` / `-c` | Optional JSON config |
 
-Exit code `0` when all assets pass; `1` when any asset fails. Skipped Unreal-only checks (when the editor module is absent) do not fail the run.
+### 2. Interactive Unreal (menus)
 
-## Usage (Unreal)
+```bash
+pipeline editor --editor C:\Path\To\UnrealEditor.exe --project C:\Path\To\Game.uproject
+# or from .env:
+pipeline editor
+```
 
-In the editor, use **Execute Python Script** and choose:
+Opens the editor. If `UE_PYTHONPATH` is unset, sets it to `<repo>/scripts/startup` so `init_unreal.py` registers Content Browser menus.
 
-`scripts/unreal_validate.py`
+Then in the editor: right-click folder → **Validate Folder**, or assets → **Validate Assets**.
 
-That script bootstraps `sys.path`, loads `scripts/unreal_validate_config.json` (enables `unreal`, `geometry`, and `textures`), and validates assets under the path in `host.content_root` (default `/Game/ExampleContent`). Change that field to scan a different Content Browser folder. Output goes to the Unreal log.
+| Arg / env | Meaning |
+|---|---|
+| `--editor` / `-e` | `UnrealEditor.exe` (or `PIPELINE_UNREAL_EDITOR`) |
+| `--project` / `-p` | `.uproject` (or `PIPELINE_UNREAL_PROJECT`) |
+| `UE_PYTHONPATH` | Python **startup script** folders (not the editor). Left alone if already set. |
+
+### 3. Unreal one-shot validate (Cmd, then exit)
+
+```bash
+pipeline editor --cmd --editor C:\Path\To\UnrealEditor.exe --project C:\Path\To\Game.uproject
+```
+
+Uses `UnrealEditor-Cmd` (derived from `--editor`, or `--editor-cmd` / `PIPELINE_UNREAL_EDITOR_CMD`), runs `scripts/unreal_run_validation.py`, waits, exits. No menus.
+
+| Arg / env | Meaning |
+|---|---|
+| `--cmd` | One-shot Cmd mode |
+| `--editor-cmd` | Explicit `UnrealEditor-Cmd.exe` (optional) |
+| `--project` | `.uproject` (required) |
+
+### 4. Menus-only Execute Script fallback
+
+If the editor was opened without `UE_PYTHONPATH`, run **Execute Python Script** → `scripts/unreal_validate.py`. Registers menus only; does not validate.
+
+### 5. Host API (inside Unreal Python)
+
+`pipeline.unreal.run_validation(config_path=..., content_root=...)` or `asset_paths=[...]`.
+
+Config for Unreal host/menu/Cmd runs: `scripts/unreal_validate_config.json`.
+
+### Path cheat sheet
+
+| Name | What it is |
+|---|---|
+| Editor path | `UnrealEditor.exe` (interactive UI) |
+| Editor Cmd path | `UnrealEditor-Cmd.exe` (automation; exits after script) |
+| Project path | `YourGame.uproject` |
+| `UE_PYTHONPATH` | Where Unreal looks for `init_unreal.py` — **not** the editor |
 
 ## Docs
 
@@ -54,6 +109,6 @@ That script bootstraps `sys.path`, loads `scripts/unreal_validate_config.json` (
 
 ## Development
 
-Project design and changes follow [Structured Prompt-Driven Development (SPDD)](https://martinfowler.com/articles/structured-prompt-driven/).
+Project design and changes follow [Structured Prompt-Driven Development (SPDD)](https://martinfowler.com/articles/structured-prompt-driven/). Use `uv` for dependency management; run the installed `pipeline` CLI (or `uv run pipeline` without activating the venv).
 
 Output uses shared emoji labels. CLI adds simple ANSI; Unreal uses log/warning/error channels (no ANSI).

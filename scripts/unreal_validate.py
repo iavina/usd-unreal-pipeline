@@ -1,6 +1,8 @@
-"""No-arg entry for Unreal Editor → Execute Python Script.
+"""Execute Python Script entry: register Content Browser validation menus.
 
-Validates assets under /Game/ExampleContent using the shared pipeline host.
+Menus-only fallback when the editor was not launched with ``UE_PYTHONPATH``
+pointing at ``scripts/startup``. Paths come from ``__file__``. Does not run
+validation — use the Content Browser menus for that.
 """
 
 from __future__ import annotations
@@ -8,13 +10,24 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Unreal's Python does not use this repo's venv, so `pipeline` is not installed.
-# Add the repo root (parent of scripts/) to sys.path so `import pipeline...` works.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_STARTUP_DIR = _SCRIPTS_DIR / "startup"
+if str(_STARTUP_DIR) not in sys.path:
+    sys.path.insert(0, str(_STARTUP_DIR))
 
-from pipeline.unreal import run_validation
+from bootstrap import ensure_repo_on_sys_path
 
-_CONFIG = Path(__file__).with_name("unreal_validate_config.json")
-run_validation(config_path=_CONFIG)
+ensure_repo_on_sys_path(_SCRIPTS_DIR.parent)
+
+try:
+    from register_menus import register_all
+
+    register_all()
+except Exception as exc:
+    import unreal
+
+    unreal.log_error(f"[Validator] Menu registration failed: {exc}")
+else:
+    import unreal
+
+    unreal.log("[Validator] Validation menus ready (use Content Browser right-click).")
